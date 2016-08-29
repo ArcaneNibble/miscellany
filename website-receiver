@@ -1,0 +1,35 @@
+#!/bin/bash
+
+set -euo pipefail
+
+sendmail -t <<EOF
+To: [[[PUT AN EMAIL HERE]]]
+From: [[[PUT AN EMAIL HERE]]]
+Subject: Audit log: New website deployed - $1
+
+User $3 with key $4 has initated deploy of revision $2 of website $1
+EOF
+
+set -x
+
+new_output_dir="/var/www/$1-$2"
+mkdir -p "$new_output_dir" && cat | tar -x -C "$new_output_dir"
+
+cd "$new_output_dir"
+[[ -x build.sh ]] && ./build.sh
+
+# TODO: The following is not atomic, do we care?
+cd /var/www
+old_prev_version="`readlink $1-prev`"
+old_cur_version="`readlink $1`"
+# Update current to actual new version
+ln -sfT "$new_output_dir" "$1"
+# Update old version to "current" that is now old
+ln -sfT "$old_cur_version" "$1-prev"
+# Remove old version that is now 2nd oldest
+rm -rf "$old_prev_version"
+
+sudo systemctl reload nginx.service
+
+echo "Deploy ok! $1 now at $2"
+
