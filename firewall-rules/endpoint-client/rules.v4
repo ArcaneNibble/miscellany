@@ -1,0 +1,54 @@
+*raw
+:PREROUTING ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+COMMIT
+
+*mangle
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A POSTROUTING -o lxcbr0 -p udp -m udp --dport 68 -j CHECKSUM --checksum-fill
+COMMIT
+
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A POSTROUTING -s 10.76.88.0/24 ! -d 10.76.88.0/24 -j MASQUERADE
+COMMIT
+
+*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+:TCP_IN - [0:0]
+:UDP_IN - [0:0]
+:ICMP_IN - [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate INVALID -j DROP
+-A INPUT -p udp -m conntrack --ctstate NEW -j UDP_IN
+-A INPUT -p tcp --syn -m conntrack --ctstate NEW -j TCP_IN
+-A INPUT -p icmp -j ICMP_IN
+-A INPUT -p igmp -j ACCEPT
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+-A TCP_IN -p tcp -m tcp --dport 22 -j ACCEPT
+-A TCP_IN -p tcp -m tcp --dport 80 -j ACCEPT
+-A TCP_IN -p tcp -m tcp --dport 443 -j ACCEPT
+-A TCP_IN -i lxcbr0 -p tcp -m tcp --dport 53 -j ACCEPT
+
+-A UDP_IN -p udp -m udp --dport 5353 -j ACCEPT
+-A UDP_IN -i lxcbr0 -p udp -m udp --dport 53 -j ACCEPT
+-A UDP_IN -i lxcbr0 -p udp -m udp --dport 67:68 --sport 67:68 -j ACCEPT
+
+-A ICMP_IN -p icmp -m icmp --icmp-type 3 -j ACCEPT
+-A ICMP_IN -p icmp -m icmp --icmp-type 11 -j ACCEPT
+-A ICMP_IN -p icmp -m icmp --icmp-type 8 -m limit --limit 10/sec -j ACCEPT
+-A ICMP_IN -p icmp -m icmp --icmp-type 8 -j DROP
+
+-A FORWARD -i lxcbr0 -j ACCEPT
+-A FORWARD -o lxcbr0 -j ACCEPT
+COMMIT

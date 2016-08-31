@@ -1,0 +1,49 @@
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+COMMIT
+
+*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+:ICMP_IN - [0:0]
+:TCP_IN - [0:0]
+:UDP_IN - [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate INVALID -j DROP
+-A INPUT -p udp -m conntrack --ctstate NEW -j UDP_IN
+-A INPUT -p tcp --syn -m conntrack --ctstate NEW -j TCP_IN
+-A INPUT -p ipv6-icmp -j ICMP_IN
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+-A TCP_IN -p tcp -m tcp --dport 22 -j ACCEPT
+-A TCP_IN -p tcp -m tcp --dport 80 -j ACCEPT
+-A TCP_IN -p tcp -m tcp --dport 443 -j ACCEPT
+
+-A UDP_IN -p udp -m udp --dport 5353 -j ACCEPT
+
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 1 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 2 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 3 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 4 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 133 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 134 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 135 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 136 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 141 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 142 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 130 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 131 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 132 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 143 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 148 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 149 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 151 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 152 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 153 -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 128 -m limit --limit 10/sec -j ACCEPT
+-A ICMP_IN -p ipv6-icmp -m icmp6 --icmpv6-type 128 -j DROP
+COMMIT

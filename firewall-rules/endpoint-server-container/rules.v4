@@ -1,0 +1,90 @@
+# Stateless firewall rules for "possibly-high-demand"
+*raw
+:PREROUTING ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:TCP_IN - [0:0]
+:TCP_OUT - [0:0]
+:UDP_IN - [0:0]
+:UDP_OUT - [0:0]
+
+# Input flows by protocol
+-A PREROUTING -i lo -j NOTRACK
+-A PREROUTING -p tcp -j TCP_IN
+-A PREROUTING -p udp -j UDP_IN
+
+# Output flows by protocol
+-A OUTPUT -o lo -j NOTRACK
+-A OUTPUT -p tcp -j TCP_OUT
+-A OUTPUT -p udp -j UDP_OUT
+
+# TCP input flow NOTRACK ports
+-A TCP_IN -p tcp -m tcp --dport 8080 -j NOTRACK
+# Never track DNS going in or out
+-A TCP_IN -p tcp -m tcp --dport 53 -j NOTRACK
+-A TCP_IN -p tcp -m tcp --sport 53 -j NOTRACK
+
+# TCP output flow NOTRACK ports
+# (Should mirror TCP_IN)
+-A TCP_OUT -p tcp -m tcp --sport 8080 -j NOTRACK
+-A TCP_OUT -p tcp -m tcp --sport 53 -j NOTRACK
+-A TCP_OUT -p tcp -m tcp --dport 53 -j NOTRACK
+
+# UDP input flow NOTRACK ports
+-A UDP_IN -p udp -m udp --dport 53 -j NOTRACK
+-A UDP_IN -p udp -m udp --sport 53 -j NOTRACK
+
+# UDP output flow NOTRACK ports
+-A UDP_OUT -p udp -m udp --sport 53 -j NOTRACK
+-A UDP_OUT -p udp -m udp --dport 53 -j NOTRACK
+COMMIT
+
+
+# No NAT happening
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+COMMIT
+
+
+# Main filter rules
+*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+:ICMP_IN - [0:0]
+:TCP_IN_NEW - [0:0]
+:TCP_IN_UNTRACKED - [0:0]
+:UDP_IN_NEW - [0:0]
+:UDP_IN_UNTRACKED - [0:0]
+
+# Separate out protocols
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate INVALID -j DROP
+# This is a hack so that ping flood prevention works
+# (otherwise RELATED,ESTABLISHED continues to allow ping)
+-A INPUT -p icmp -j ICMP_IN
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -p udp -m conntrack --ctstate UNTRACKED -j UDP_IN_UNTRACKED
+-A INPUT -p tcp -m conntrack --ctstate UNTRACKED -j TCP_IN_UNTRACKED
+-A INPUT -p udp -m conntrack --ctstate NEW -j UDP_IN_NEW
+-A INPUT -p tcp -m tcp --syn -m conntrack --ctstate NEW -j TCP_IN_NEW
+-A INPUT -p igmp -j ACCEPT
+
+# ICMP, allow unreachable notifications, ttl notifications, and limited ping
+-A ICMP_IN -p icmp -m icmp --icmp-type 3 -j ACCEPT
+-A ICMP_IN -p icmp -m icmp --icmp-type 11 -j ACCEPT
+-A ICMP_IN -p icmp -m icmp --icmp-type 8 -m limit --limit 10/sec -j ACCEPT
+-A ICMP_IN -p icmp -m icmp --icmp-type 8 -j DROP
+
+# TCP, NEW/UNTRACKED must match stateless logic earlier
+-A TCP_IN_NEW -p tcp -m tcp --dport 22 -s 10.111.111.0/24 -j ACCEPT
+-A TCP_IN_UNTRACKED -p tcp -m tcp --dport 8080 -s 10.111.111.0/24 -j ACCEPT
+-A TCP_IN_UNTRACKED -p tcp -m tcp --dport 53 -j ACCEPT
+-A TCP_IN_UNTRACKED -p tcp -m tcp --sport 53 -j ACCEPT
+
+# UDP
+-A UDP_IN_UNTRACKED -p udp -m udp --dport 53 -j ACCEPT
+-A UDP_IN_UNTRACKED -p udp -m udp --sport 53 -j ACCEPT
+COMMIT

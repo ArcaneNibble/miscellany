@@ -1,0 +1,116 @@
+# Stateless firewall rules for "possibly-high-demand"
+*raw
+:PREROUTING ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:TCP_IN_INET - [0:0]
+:TCP_OUT_INET - [0:0]
+:UDP_IN_INET - [0:0]
+:UDP_OUT_INET - [0:0]
+:TCP_IN_OTHER - [0:0]
+:TCP_OUT_OTHER - [0:0]
+:UDP_IN_OTHER - [0:0]
+:UDP_OUT_OTHER - [0:0]
+
+# Input flows by protocol
+-A PREROUTING -i lo -j NOTRACK
+-A PREROUTING -i eth0 -p tcp -j TCP_IN_INET
+-A PREROUTING -i eth0 -p udp -j UDP_IN_INET
+-A PREROUTING -p tcp -j TCP_IN_OTHER
+-A PREROUTING -p udp -j UDP_IN_OTHER
+
+# Output flows by protocol
+-A OUTPUT -o lo -j NOTRACK
+-A OUTPUT -o eth0 -p tcp -j TCP_OUT_INET
+-A OUTPUT -o eth0 -p udp -j UDP_OUT_INET
+-A OUTPUT -p tcp -j TCP_OUT_OTHER
+-A OUTPUT -p udp -j UDP_OUT_OTHER
+
+# TCP input flow NOTRACK ports from Internet
+-A TCP_IN_INET -p tcp -m tcp --dport 80 -j NOTRACK
+-A TCP_IN_INET -p tcp -m tcp --dport 443 -j NOTRACK
+-A TCP_IN_INET -p tcp -m tcp --dport 25 -j NOTRACK
+# Never track DNS going in or out from anywhere
+-A TCP_IN_OTHER -p tcp -m tcp --dport 53 -j NOTRACK
+-A TCP_IN_OTHER -p tcp -m tcp --sport 53 -j NOTRACK
+
+# TCP output flow NOTRACK ports
+# (Should mirror TCP_IN)
+-A TCP_OUT_INET -p tcp -m tcp --sport 80 -j NOTRACK
+-A TCP_OUT_INET -p tcp -m tcp --sport 443 -j NOTRACK
+-A TCP_OUT_INET -p tcp -m tcp --sport 25 -j NOTRACK
+-A TCP_OUT_OTHER -p tcp -m tcp --sport 53 -j NOTRACK
+-A TCP_OUT_OTHER -p tcp -m tcp --dport 53 -j NOTRACK
+
+# UDP input flow NOTRACK ports
+-A UDP_IN_OTHER -p udp -m udp --dport 53 -j NOTRACK
+-A UDP_IN_OTHER -p udp -m udp --sport 53 -j NOTRACK
+
+# UDP output flow NOTRACK ports
+-A UDP_OUT_OTHER -p udp -m udp --sport 53 -j NOTRACK
+-A UDP_OUT_OTHER -p udp -m udp --dport 53 -j NOTRACK
+COMMIT
+
+
+# Routing for bridges to internet
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A POSTROUTING -s 10.111.111.0/24 ! -d 10.111.111.0/24 -j MASQUERADE
+-A POSTROUTING -s 10.111.222.0/24 ! -d 10.111.222.0/24 -j MASQUERADE
+COMMIT
+
+
+# Main filter rules
+*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+:ICMP_IN - [0:0]
+:TCP_IN_NEW - [0:0]
+:TCP_IN_UNTRACKED - [0:0]
+:UDP_IN_NEW - [0:0]
+:UDP_IN_UNTRACKED - [0:0]
+
+# Separate out protocols
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate INVALID -j DROP
+# This is a hack so that ping flood prevention works
+# (otherwise RELATED,ESTABLISHED continues to allow ping)
+-A INPUT -p icmp -j ICMP_IN
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -p udp -m conntrack --ctstate UNTRACKED -j UDP_IN_UNTRACKED
+-A INPUT -p tcp -m conntrack --ctstate UNTRACKED -j TCP_IN_UNTRACKED
+-A INPUT -p udp -m conntrack --ctstate NEW -j UDP_IN_NEW
+-A INPUT -p tcp -m tcp --syn -m conntrack --ctstate NEW -j TCP_IN_NEW
+-A INPUT -p igmp -j ACCEPT
+
+# Routing for bridges to internet
+-A FORWARD -i lxcbr0 -o eth0 -j ACCEPT
+-A FORWARD -o lxcbr0 -j ACCEPT
+-A FORWARD -i lxcbr1 -o eth0 -j ACCEPT
+-A FORWARD -o lxcbr1 -j ACCEPT
+
+# ICMP, allow unreachable notifications, ttl notifications, and limited ping
+-A ICMP_IN -p icmp -m icmp --icmp-type 3 -j ACCEPT
+-A ICMP_IN -p icmp -m icmp --icmp-type 11 -j ACCEPT
+-A ICMP_IN -p icmp -m icmp --icmp-type 8 -m limit --limit 10/sec -j ACCEPT
+-A ICMP_IN -p icmp -m icmp --icmp-type 8 -j DROP
+
+# TCP, NEW/UNTRACKED must match stateless logic earlier
+-A TCP_IN_NEW -p tcp -m tcp --dport 22 -j ACCEPT
+-A TCP_IN_NEW -p tcp -m tcp --dport 25 -j ACCEPT
+# TODO: Fix this hack
+-A TCP_IN_NEW -j TCP_IN_UNTRACKED
+-A TCP_IN_UNTRACKED -p tcp -m tcp --dport 80 -j ACCEPT
+-A TCP_IN_UNTRACKED -p tcp -m tcp --dport 443 -j ACCEPT
+-A TCP_IN_UNTRACKED -p tcp -m tcp --dport 25 -j ACCEPT
+-A TCP_IN_UNTRACKED -p tcp -m tcp --dport 53 -j ACCEPT
+-A TCP_IN_UNTRACKED -p tcp -m tcp --sport 53 -j ACCEPT
+
+# UDP
+-A UDP_IN_NEW -j UDP_IN_UNTRACKED
+-A UDP_IN_UNTRACKED -p udp -m udp --dport 53 -j ACCEPT
+-A UDP_IN_UNTRACKED -p udp -m udp --sport 53 -j ACCEPT
+COMMIT
