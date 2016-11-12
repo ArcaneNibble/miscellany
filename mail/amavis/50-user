@@ -1,0 +1,60 @@
+use strict;
+
+#
+# Place your configuration directives here.  They will override those in
+# earlier files.
+#
+# See /usr/share/doc/amavisd-new/ for documentation and examples of
+# the directives you can use in this file
+#
+
+# Maybe this should match the Postfix process limit???
+$max_servers = 10;
+# Postfix forwards to us on this port
+$inet_socket_port = 10025;
+# Time limit of one minute because we are pre-queue
+# Should be less than the Postfix proxy timeout (default 100s)
+$child_timeout = 60;
+
+# Explicitly set domain stuff just in case
+$mydomain = 'robertou.com';
+$myhostname = 'robertou.com';
+
+# This is what is sent in EHLO. Not a real domain, but it helps make
+# headers more readable.
+$localhost_name = '_amavis.robertou.com';
+
+# We forward good email back to Postfix on this port.
+# This port is *restriction-free* so it is only available to localhost.
+$forward_method = 'smtp:[127.0.0.1]:10026';
+$notify_method = 'smtp:[127.0.0.1]:10026';
+
+# All domains are scanned. This is because we use virtual hosting and have
+# a bunch of domains. We could query the database, but why bother?
+@local_domains_acl = qw(.);
+
+# Spam filtering is enabled in 15-content_filter_mode
+
+# Don't ban anything
+$banned_filename_re = new_RE();
+
+# We reject spam but allow malformed headers for compatibility.
+# We don't scan for viruses or ban any file types.
+$final_spam_destiny       = D_REJECT;
+$final_bad_header_destiny = D_PASS;
+# We don't care about bad headers, don't quarantine for that
+$bad_header_quarantine_to = undef;
+
+# Settings for SpamAssassin
+$sa_spam_subject_tag = '***SPAM*** ';
+$sa_tag_level_deflt  = -999;
+$sa_tag2_level_deflt = 5.0;
+$sa_kill_level_deflt = 10;
+$sa_dsn_cutoff_level = 10;
+
+$sa_mail_body_size_limit = 200*1024; # don't waste time on SA if mail is larger
+$sa_local_tests_only = 0;    # only tests which do not require internet access?
+
+
+#------------ Do not modify anything below this line -------------
+1;  # ensure a defined return
