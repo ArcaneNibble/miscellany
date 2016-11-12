@@ -1,0 +1,32 @@
+driver = pgsql
+
+connect = "host=localhost dbname=maildb user=mail password='<password>'"
+
+default_pass_scheme = SHA512-CRYPT
+
+# This passdb query should NOT be used for local delivery. It is only used for
+# authenticated queries (IMAP, SMTP submission). There are two "halves" of the
+# query: the first is used for submission ("app passwords") and the second is
+# used for IMAP (client certificates).
+password_query = \
+# Submission part. There is a password but no home directory. No replacement of
+# usernames occurs. We don't care about the username on submission. We use the
+# 'home' column to ensure that this only gets submission users and the below
+# only gets "real" users.
+  SELECT  id AS user, crypt AS password, null AS nopassword, null as userdb_home \
+  FROM users WHERE  id='%u' AND home='' AND enabled=true AND '%s'='smtp' UNION \
+# Access part. There is no password. We do a bunch of switcharoos with
+# usernames. The client presents both a desired mailbox as a username and a
+# client certificate. The SSL configuration forces the username to be replaced
+# with the client certificate username, but the original username is kept as
+# orig_user. This query then uses orig_user to set the username back to what
+# the client asked for.
+  SELECT  '%{orig_user}' AS user, '' AS password, true AS nopassword, home as userdb_home \
+  FROM users WHERE  id='%{orig_user}' AND home!='' AND ccert_user='%u' AND enabled=true AND '%s'='imap'
+
+# This userdb query is used ONLY for unauthenticated uses such as local
+# delivery. To make sure we don't have submission users by accident, check the
+# 'home' column and ensure it is nonempty.
+user_query = \
+  SELECT  id AS user, home \
+  FROM users WHERE  id='%u' AND home!='' AND enabled=true
