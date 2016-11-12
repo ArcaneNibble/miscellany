@@ -1,0 +1,118 @@
+#
+# Postfix master process configuration file.  For details on the format
+# of the file, see the master(5) manual page (command: "man 5 master").
+#
+# Do not forget to execute "postfix reload" after editing this file.
+#
+# ==========================================================================
+# service type  private unpriv  chroot  wakeup  maxproc command + args
+#               (yes)   (yes)   (yes)   (never) (100)
+# ==========================================================================
+#smtp      inet  n       -       -       -       1       postscreen
+#smtpd     pass  -       -       -       -       -       smtpd
+#dnsblog   unix  -       -       -       -       0       dnsblog
+#tlsproxy  unix  -       -       -       -       0       tlsproxy
+
+# Ingress flow
+#  SMTP submission (authenticated, port 587)
+submission inet  n       -       y       -       -       smtpd
+#   Don't spam filter submission stuff
+    -o smtpd_proxy_filter=
+    -o syslog_name=postfix/submission
+#   Keep opportunistic TLS settings from main.cf, but request client certs
+    -o smtpd_tls_ask_ccert=yes
+#   Better TLS settings
+    -o smtpd_tls_dh1024_param_file=/etc/postfix/dh2048.pem
+    -o smtpd_tls_protocols=TLSv1.2
+    -o smtpd_tls_ciphers=high
+    -o tls_high_cipherlist=ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
+    -o tls_preempt_cipherlist=yes
+#   Enable SASL
+    -o smtpd_sasl_auth_enable=yes
+    -o smtpd_sasl_type=dovecot
+    -o smtpd_sasl_path=private/dovecot-auth
+#   Permit plaintext authentication only when we're protected by TLS
+    -o smtpd_tls_auth_only=yes
+    -o smtpd_sasl_security_options=noanonymous
+#   Disable all restrictions if authenticated using either client cert or
+#   password, but a password isn't needed if a cert is given.
+    -o smtpd_client_restrictions=permit_mynetworks,permit_tls_all_clientcerts,permit_sasl_authenticated,reject
+    -o smtpd_data_restrictions=
+    -o smtpd_end_of_data_restrictions=
+    -o smtpd_helo_restrictions=
+#   This is necessary to not get an error. You need to have some restrictions
+#   on recipient or relay even if nothing actually gets restricted.
+    -o smtpd_recipient_restrictions=permit_mynetworks,permit_tls_all_clientcerts,permit_sasl_authenticated,reject
+    -o smtpd_relay_restrictions=
+    -o smtpd_sender_restrictions=
+#   TODO: Do we want this?
+    -o receive_override_options=no_header_body_checks
+#  SMTP from network (port 25), limited to 10 processes because of
+#  pre-queue spam filtering
+smtp       inet  n       -       y       -       10      smtpd
+#   Connection limit per client due to new process limit
+    -o smtpd_client_connection_count_limit=5
+#  Mail from local machine. No header/body checking is applied.
+pickup     fifo  n       -       y       60      1       pickup
+    -o receive_override_options=no_header_body_checks
+#  Re-inject path for pre-queue filtering. There are *no restrictions*
+#  set on this port, so it allows connections only from localhost.
+127.0.0.1:10026 inet n   -       y       -       -       smtpd
+#   We don't want to pass through the spam filter again
+    -o smtpd_proxy_filter=
+    -o syslog_name=postfix-reinject
+#   Enable XFORWARD to allow logging to be overridden
+    -o smtpd_authorized_xforward_hosts=127.0.0.0/8
+#   Trust only localhost
+    -o mynetworks=127.0.0.0/8
+#   Disable restrictions
+    -o smtpd_client_restrictions=
+    -o smtpd_data_restrictions=
+    -o smtpd_end_of_data_restrictions=
+    -o smtpd_helo_restrictions=
+#   This is necessary to not get an error. You need to have some restrictions
+#   on recipient or relay even if nothing actually gets restricted.
+    -o smtpd_recipient_restrictions=permit_mynetworks,reject
+    -o smtpd_relay_restrictions=
+    -o smtpd_sender_restrictions=
+#   We don't need to check recipients again because the first server on port
+#   25 already does so. However, note that this means that we have to trust
+#   other things using the reinject flow (Mailman) to behave correctly.
+#   There is a potential to get backscatter if Mailman somehow decides to
+#   send to a forged address on this domain with a forged bounce address.
+#   Fortunately, Mailman should hopefully be programmed correctly so that
+#   this can't happen.
+#   We do want header/body checks (I think?) because those are done in cleanup,
+#   which is after the pre-queue spam filter (and therefore hasn't happened yet
+#   when mail is reinjected).
+    -o receive_override_options=no_unknown_recipient_checks
+
+# Postfix internal logic
+cleanup    unix  n       -       y       -       0       cleanup
+qmgr       fifo  n       -       y       300     1       qmgr
+tlsmgr     unix  -       -       y       1000?   1       tlsmgr
+rewrite    unix  -       -       y       -       -       trivial-rewrite
+bounce     unix  -       -       y       -       0       bounce
+defer      unix  -       -       y       -       0       bounce
+trace      unix  -       -       y       -       0       bounce
+verify     unix  -       -       y       -       1       verify
+flush      unix  n       -       y       1000?   0       flush
+proxymap   unix  -       -       n       -       -       proxymap
+proxywrite unix  -       -       n       -       1       proxymap
+scache     unix  -       -       y       -       1       scache
+showq      unix  n       -       y       -       -       showq
+anvil      unix  -       -       y       -       1       anvil
+error      unix  -       -       y       -       -       error
+retry      unix  -       -       y       -       -       error
+policy-spf unix  -       n       n       -       -       spawn
+  user=nobody argv=/usr/bin/policyd-spf
+
+# Egress flow (transports)
+smtp       unix  -       -       y       -       -       smtp
+lmtp       unix  -       -       y       -       -       lmtp
+relay      unix  -       -       y       -       -       smtp
+local      unix  -       n       n       -       -       local
+discard    unix  -       -       y       -       -       discard
+#  Used to send mail into scripts (rqou addition)
+mailscripts unix -       n       n       -       -       pipe
+  flags=FRq user=mailscripts argv=/storage/mailscripts/mailscript_${mailbox}

@@ -1,0 +1,7 @@
+hosts=127.0.0.1
+user=mail
+password=<password>
+
+dbname=maildb
+
+query = SELECT domain FROM domains WHERE domain='%s' AND enabled=true
