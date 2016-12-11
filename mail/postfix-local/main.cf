@@ -1,0 +1,60 @@
+### Global-ish settings
+
+myhostname = host.robertou.com
+myorigin = robertou.com
+mydomain = robertou.com
+# Use new queue ID system
+enable_long_queue_ids = yes
+# Local only
+mynetworks_style = host
+# TODO: Test implications of making this yes.
+smtputf8_enable=no
+# Use new default settings
+compatibility_level=2
+
+### Ingress flow
+
+# 100 MiB
+message_size_limit = 104857600
+
+# We don't need all the rules and stuff for a "null client"
+
+# We do want to append origin to random locally-generated stuff
+append_at_myorigin = yes
+# appending .domain is the MUA's job.
+append_dot_mydomain = no
+
+### Egress/delivery flow
+
+## (Inability to) local
+mydestination =
+biff = no
+# Silence NIS warnings and disable aliases that won't be used
+alias_maps =
+# Ensure inability to locally deliver by sending to [IP]
+local_recipient_maps = texthash:/etc/postfix/no_recipients_map
+
+## Relaying of everything
+smtp_tls_security_level = fingerprint
+smtp_tls_fingerprint_digest = sha256
+smtp_tls_fingerprint_cert_match = 40:30:E4:05:0A:68:64:EE:02:1A:70:84:E2:25:12:60:DC:96:A4:EF:BC:53:E9:41:B0:ED:88:79:AB:4E:AB:E8
+smtp_tls_mandatory_ciphers = high
+smtp_tls_session_cache_database = btree:${data_directory}/smtp_cache
+# Client cert
+smtp_tls_cert_file = /etc/ssl/certs/rqou-nyaaa.pem
+smtp_tls_key_file = /etc/ssl/private/rqou-nyaaa.key
+# And this line actually does the stuff
+relayhost = [robertou.com]:587
+
+# how long to wait when servers connect before receiving rest of data
+smtp_helo_timeout = 60s
+
+## Deferrals and delays
+
+# how long if undelivered before sending warning update to sender
+delay_warning_time = 4h
+# how long to keep message on queue before return as failed
+maximal_queue_lifetime = 7d
+# max and min time in seconds between retries if connection failed
+minimal_backoff_time = 300s
+maximal_backoff_time = 8000s
